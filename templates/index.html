@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Okta Live Tail</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+<style>
+  :root { font-size: 87.5%; }
+  body { padding: 1rem 1.5rem; }
+  header { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:1rem; margin-bottom: 0.75rem; }
+  header h1 { margin: 0; font-size: 1.25rem; }
+  header .sub { font-size: 0.85em; color: var(--pico-muted-color); }
+
+  .toolbar { display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; margin: 0.5rem 0 0.75rem; }
+  .toolbar input[type=text] { flex: 1 1 320px; min-width: 280px; padding: 0.45rem 0.7rem; font-size: 0.9em; margin: 0; }
+  .env-buttons { display:flex; gap:0.25rem; }
+  .env-btn {
+    padding:0.25rem 0.7rem !important; font-size:0.82em !important; margin:0 !important;
+    border-radius:999px !important; border:1px solid #bbb !important;
+    background:#f0f0f0 !important; color:#333 !important; cursor:pointer; font-weight:600;
+  }
+  .env-btn.active { background:#1b6e1b !important; border-color:#1b6e1b !important; color:#fff !important; }
+  .toolbar .meta { font-size:0.78em; color: var(--pico-muted-color); margin-left:auto; }
+
+  .filter-row { display:flex; gap:1.25rem; align-items:center; flex-wrap:wrap; margin: 0 0 0.75rem; font-size:0.82em; color: var(--pico-muted-color); }
+  .filter-row .label { font-weight: 600; color:#555; }
+  .filter-row .group { display:flex; gap:0.25rem; }
+  .filter-row .f-btn {
+    padding:0.15rem 0.55rem; font-size:0.78em; margin:0;
+    border-radius:999px; border:1px solid #bbb;
+    background:#f0f0f0; color:#333 !important; cursor:pointer;
+  }
+  .filter-row .f-btn:hover { background:#e0e0e0; }
+  .filter-row .f-btn.active { background:#1b6e1b !important; border-color:#1b6e1b !important; color:#fff !important; font-weight:600; }
+  .filter-row .f-btn.active.success { background:#1b6e1b !important; border-color:#1b6e1b !important; }
+  .filter-row .f-btn.active.failure { background:#b71c1c !important; border-color:#b71c1c !important; }
+
+  table { width: 100%; font-size: 0.85em; }
+  th { white-space: nowrap; }
+  td { padding: 0.3rem 0.5rem; vertical-align: top; }
+  td.time { font-variant-numeric: tabular-nums; color:#555; white-space:nowrap; }
+  td.user { font-weight: 500; }
+  td.reason { color: #666; font-size: 0.9em; }
+  td.reason.is-empty { color: #bbb; }
+  tr.r-success td.result { color: #1b6e1b; font-weight: 600; }
+  tr.r-failure td.result { color: #b71c1c; font-weight: 600; }
+  tr.r-failure { background: #fff8f8; }
+
+  .chip { display:inline-flex; align-items:center; padding: 0.05rem 0.45rem; border-radius:999px; font-size:0.76em; border:1px solid var(--pico-muted-border-color); background: var(--pico-muted-background-color); }
+  .chip-saml { background:#f3e8fc; border-color:#cba8e6; color:#6a1b9a; }
+  .chip-oidc { background:#e3f0fc; border-color:#90caf9; color:#1565c0; }
+  .chip-other { background:#f0f0f0; border-color:#ccc; color:#555; }
+
+  footer { margin-top: 1.5rem; padding-top: 0.75rem; border-top:1px solid var(--pico-muted-border-color); font-size:0.8em; color:var(--pico-muted-color); text-align:center; }
+  .err { color: #b71c1c; font-weight: 600; }
+  .empty { color: #888; text-align:center; padding: 2rem 0; }
+
+
+  tbody tr.event-row { cursor: pointer; }
+  tbody tr.event-row:hover { background: #f6fbff; }
+  tbody tr.event-row.selected { background: #eef7ff; }
+  tbody tr.r-failure.event-row:hover { background: #fff0f0; }
+  tbody tr.r-failure.event-row.selected { background: #fee; }
+  .expand-caret {
+    display: inline-block; width: 0.85rem; text-align: center;
+    color: var(--pico-muted-color); margin-right: 0.35rem;
+    transition: transform 0.15s ease;
+    user-select: none;
+  }
+  tbody tr.event-row:hover .expand-caret { color: #1b6ca8; }
+  tbody tr.event-row.selected .expand-caret { transform: rotate(90deg); color: #1b6ca8; }
+  tbody tr.raw-row td { padding: 0 0 0.75rem 0; border-top: 0; background: #f8fafc; }
+  .raw-drawer {
+    margin: 0 0.25rem 0.25rem 0.25rem; padding: 0.75rem;
+    border: 1px solid var(--pico-muted-border-color); border-radius: 6px;
+    background: #fff;
+  }
+  .raw-drawer-title {
+    margin-bottom: 0.4rem; font-size: 0.82em; color: var(--pico-muted-color);
+    font-weight: 600; display:flex; align-items:center; gap:0.5rem;
+  }
+  .raw-drawer-title .uuid {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.9em;
+    color: var(--pico-muted-color); font-weight: 400;
+  }
+  .raw-drawer pre {
+    margin: 0; padding: 0.75rem; max-height: 28rem; overflow: auto;
+    background: #111827; color: #f9fafb; border-radius: 4px;
+    font-size: 0.82em; line-height: 1.45;
+  }
+  .raw-drawer .raw-err { color: #b71c1c; font-style: italic; font-size: 0.85em; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Okta Live Tail <a href="/howto" style="font-size:0.55em; color:#1b6ca8; text-decoration:none; font-weight:500; margin-left:0.5rem; padding:0.15rem 0.55rem; border-radius:999px; border:1px solid #cfe1ee; background:#f0f7fc; vertical-align:middle;">How it works</a></h1>
+    <div class="sub">Per-event tail of <code>/api/v1/logs</code> &middot; rolls 500 events &middot; polls every 5s &middot; v{{ version }}</div>
+  </div>
+  <div class="env-buttons" id="env-buttons">
+    {% for e in envs %}
+      <button class="env-btn {% if e == default_env %}active{% endif %}" data-env="{{ e }}" onclick="setEnv('{{ e }}')">{{ e.upper() }}</button>
+    {% endfor %}
+  </div>
+</header>
+
+<div class="toolbar">
+  <input type="text" id="filter" placeholder="Filter: email, app, app id, client id, IP… (space-separated tokens are AND'd)" autocomplete="off" oninput="onFilterChange()">
+  <span class="meta" id="meta">—</span>
+</div>
+
+<div class="filter-row">
+  <span class="label">Type:</span>
+  <div class="group" id="type-buttons">
+    <button class="f-btn active" data-type="all"          onclick="setType('all')">All</button>
+    <button class="f-btn"        data-type="SAML"         onclick="setType('SAML')">SAML</button>
+    <button class="f-btn"        data-type="OIDC"         onclick="setType('OIDC')">OIDC</button>
+    <button class="f-btn"        data-type="auth_via_IDP" onclick="setType('auth_via_IDP')">auth_via_IDP</button>
+    <button class="f-btn"        data-type="other"        onclick="setType('other')">Other</button>
+  </div>
+  <span class="label" style="margin-left:1rem">Result:</span>
+  <div class="group" id="result-buttons">
+    <button class="f-btn active" data-result="all"     onclick="setResult('all')">All</button>
+    <button class="f-btn"        data-result="SUCCESS" onclick="setResult('SUCCESS')">SUCCESS</button>
+    <button class="f-btn"        data-result="FAILURE" onclick="setResult('FAILURE')">FAILURE</button>
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>User</th>
+      <th>App</th>
+      <th>Type</th>
+      <th>Result</th>
+      <th>Reason</th>
+    </tr>
+  </thead>
+  <tbody id="rows"><tr><td colspan="6" class="empty">Waiting for first poll…</td></tr></tbody>
+</table>
+
+<footer>
+  Okta Live Tail v{{ version }}
+  {% if user %}&middot; <span style="color:#1b6ca8">{{ user.email }}</span> &middot; <a href="/logout">Sign out</a>{% endif %}
+</footer>
+
+<script>
+let currentEnv = "{{ default_env }}";
+let typeFilters = new Set(["all"]);
+let resultFilters = new Set(["all"]);
+let lastRows = [];
+let pollHandle = null;
+
+const expandedUuids = new Set();
+const rawCache = new Map();
+
+function isOther(t) {
+  return t !== "SAML" && t !== "OIDC" && t !== "auth_via_IDP";
+}
+
+function matchesTypeResult(r) {
+  if (!typeFilters.has("all")) {
+    const t = r.sso_type;
+    const match =
+      (typeFilters.has("SAML")         && t === "SAML")         ||
+      (typeFilters.has("OIDC")         && t === "OIDC")         ||
+      (typeFilters.has("auth_via_IDP") && t === "auth_via_IDP") ||
+      (typeFilters.has("other")        && isOther(t));
+    if (!match) return false;
+  }
+  if (!resultFilters.has("all") && !resultFilters.has(r.result)) return false;
+  return true;
+}
+
+function toggleInSet(set, key) {
+  if (key === "all") {
+    set.clear();
+    set.add("all");
+    return;
+  }
+  set.delete("all");
+  if (set.has(key)) set.delete(key);
+  else set.add(key);
+  if (set.size === 0) set.add("all");
+}
+
+function paintTypeButtons() {
+  document.querySelectorAll("#type-buttons .f-btn").forEach(b =>
+    b.classList.toggle("active", typeFilters.has(b.dataset.type)));
+}
+
+function paintResultButtons() {
+  document.querySelectorAll("#result-buttons .f-btn").forEach(b => {
+    const on = resultFilters.has(b.dataset.result);
+    b.classList.toggle("active", on);
+    b.classList.toggle("success", b.dataset.result === "SUCCESS" && on);
+    b.classList.toggle("failure", b.dataset.result === "FAILURE" && on);
+  });
+}
+
+function setType(t) {
+  toggleInSet(typeFilters, t);
+  paintTypeButtons();
+  applyLocalFilters();
+}
+
+function setResult(rv) {
+  toggleInSet(resultFilters, rv);
+  paintResultButtons();
+  applyLocalFilters();
+}
+
+function applyLocalFilters() {
+  renderRows(lastRows.filter(matchesTypeResult));
+}
+
+function escHtml(s) {
+  return (s ?? "").toString()
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function fmtTime(iso) {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], {hour12: false}) +
+           "." + String(d.getMilliseconds()).padStart(3, "0");
+  } catch { return iso; }
+}
+
+function typeChip(t) {
+  const c = t === "SAML" ? "chip-saml" : t === "OIDC" ? "chip-oidc" : "chip-other";
+  return `<span class="chip ${c}">${escHtml(t || "?")}</span>`;
+}
+
+function renderRows(rows) {
+  const tbody = document.getElementById("rows");
+  if (!rows || rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty">No events match current filter.</td></tr>`;
+    return;
+  }
+  const visibleUuids = new Set(rows.map(r => r.uuid));
+  for (const u of [...expandedUuids]) {
+    if (!visibleUuids.has(u)) expandedUuids.delete(u);
+  }
+  const html = rows.map(r => {
+    const cls = r.result === "SUCCESS" ? "r-success" : r.result === "FAILURE" ? "r-failure" : "";
+    const isOpen = expandedUuids.has(r.uuid);
+    const selCls = isOpen ? " selected" : "";
+    const drawer = isOpen ? renderDrawer(r.uuid) : "";
+    return `
+      <tr class="event-row ${cls}${selCls}" data-uuid="${escHtml(r.uuid)}" onclick="toggleExpand('${escHtml(r.uuid)}')">
+        <td class="time"><span class="expand-caret">&#9656;</span>${escHtml(fmtTime(r.published))}</td>
+        <td class="user" title="${escHtml(r.user_id)}">${escHtml(r.user)}</td>
+        <td title="${escHtml(r.app_id)}">${escHtml(r.app)}</td>
+        <td>${typeChip(r.sso_type)}</td>
+        <td class="result">${escHtml(r.result || "—")}</td>
+        <td class="reason${r.reason ? '' : ' is-empty'}">${r.reason ? escHtml(r.reason) : '—'}</td>
+      </tr>${drawer}`;
+  }).join("");
+  tbody.innerHTML = html;
+  for (const u of expandedUuids) {
+    const key = `${currentEnv}:${u}`;
+    if (!rawCache.has(key)) fetchAndPopulateRaw(u);
+  }
+}
+
+function renderDrawer(uuid) {
+  const key = `${currentEnv}:${uuid}`;
+  const cached = rawCache.get(key);
+  const body = cached
+    ? `<pre>${escHtml(cached)}</pre>`
+    : `<pre class="raw-loading">Loading…</pre>`;
+  return `
+    <tr class="raw-row" data-uuid="${escHtml(uuid)}">
+      <td colspan="6">
+        <div class="raw-drawer">
+          <div class="raw-drawer-title">
+            <span>Raw Okta event</span>
+            <span class="uuid">${escHtml(uuid)}</span>
+          </div>
+          ${body}
+        </div>
+      </td>
+    </tr>`;
+}
+
+async function fetchAndPopulateRaw(uuid) {
+  const key = `${currentEnv}:${uuid}`;
+  try {
+    const r = await fetch(`/api/events/raw/${encodeURIComponent(uuid)}?env=${currentEnv}`,
+                         {credentials: "same-origin"});
+    let pretty;
+    if (r.ok) {
+      const j = await r.json();
+      pretty = JSON.stringify(j, null, 2);
+    } else {
+      const j = await r.json().catch(() => ({}));
+      pretty = `// HTTP ${r.status}: ${j.error || "fetch failed"}`;
+    }
+    rawCache.set(key, pretty);
+  } catch (e) {
+    rawCache.set(key, `// fetch error: ${e.message || e}`);
+  }
+  const drawerRow = document.querySelector(`tr.raw-row[data-uuid="${cssEsc(uuid)}"]`);
+  if (drawerRow) {
+    const pre = drawerRow.querySelector("pre");
+    if (pre) {
+      pre.textContent = rawCache.get(key);
+      pre.classList.remove("raw-loading");
+    }
+  }
+}
+
+function cssEsc(s) {
+  return (s ?? "").toString().replace(/["\\]/g, "\\$&");
+}
+
+function toggleExpand(uuid) {
+  if (expandedUuids.has(uuid)) {
+    expandedUuids.delete(uuid);
+  } else {
+    expandedUuids.add(uuid);
+  }
+  applyLocalFilters();
+}
+
+async function fetchAndRender() {
+  const q = document.getElementById("filter").value.trim();
+  const params = new URLSearchParams({env: currentEnv});
+  if (q) params.set("q", q);
+  try {
+    const r = await fetch("/api/events?" + params.toString(), {credentials: "same-origin"});
+    if (!r.ok) {
+      document.getElementById("meta").innerHTML = `<span class="err">HTTP ${r.status}</span>`;
+      return;
+    }
+    const j = await r.json();
+    lastRows = j.rows || [];
+    const filtered = lastRows.filter(matchesTypeResult);
+    renderRows(filtered);
+    const m = j.meta || {};
+    const errBit = m.last_error ? ` <span class="err">err: ${escHtml(m.last_error)}</span>` : "";
+    const last = m.last_poll ? new Date(m.last_poll).toLocaleTimeString([], {hour12:false}) : "—";
+    document.getElementById("meta").innerHTML =
+      `env=<b>${currentEnv.toUpperCase()}</b> &middot; rows=${filtered.length}/${lastRows.length}/${m.buffer_len} &middot; seen=${m.events_seen} &middot; last poll ${last}${errBit}`;
+  } catch (e) {
+    document.getElementById("meta").innerHTML = `<span class="err">${escHtml(e.message || e)}</span>`;
+  }
+}
+
+function setEnv(e) {
+  currentEnv = e;
+  document.querySelectorAll("#env-buttons .env-btn").forEach(b =>
+    b.classList.toggle("active", b.dataset.env === e));
+  fetchAndRender();
+}
+
+let filterDebounce = null;
+function onFilterChange() {
+  clearTimeout(filterDebounce);
+  filterDebounce = setTimeout(fetchAndRender, 200);
+}
+
+function startPolling() {
+  fetchAndRender();
+  pollHandle = setInterval(fetchAndRender, 3500);
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
+  } else {
+    if (!pollHandle) startPolling();
+  }
+});
+
+startPolling();
+</script>
+</body>
+</html>

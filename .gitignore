@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local secrets and runtime output — never commit
+.env
+.env.*
+!.env.example
+*.log
+*.pem
+*.key
+backups/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

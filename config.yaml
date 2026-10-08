@@ -1,0 +1,17 @@
+envs:
+  dev:
+    url: https://host.example.com
+    client_id: 0oaEXAMPLE00EXAMPLE0
+    private_key_var: OKTA_LIVE_TAIL_DEV_PRIVATE_KEY
+    app_name: Okta Live Tail (Service)
+  stg:
+    url: https://host.example.com
+    client_id: 0oaEXAMPLE00EXAMPLE0
+    private_key_var: OKTA_LIVE_TAIL_STG_PRIVATE_KEY
+    app_name: Okta Live Tail (Service)
+  prod:
+    url: https://host.example.com
+    client_id: 0oaEXAMPLE00EXAMPLE0
+    private_key_var: OKTA_LIVE_TAIL_PROD_PRIVATE_KEY
+    app_name: Okta Live Tail (Service)
+default_env: dev
