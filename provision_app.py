@@ -14,8 +14,8 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from config import env_config, known_envs
 from credentials import admin_token
-from settings import verify_tls_from_env
 from okta_auth import MissingCredentialError
+from settings import verify_tls_from_env
 
 log = logging.getLogger("livetail.provision")
 logging.basicConfig(

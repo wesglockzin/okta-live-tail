@@ -25,10 +25,10 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 import oauth as token_source
 from config import default_env, env_config, known_envs
-from settings import load_settings
 from howto import register_howto
 from http_session import make_session
 from okta_auth import from_env_or_keyring
+from settings import load_settings
 
 logging.basicConfig(
     level=logging.INFO,

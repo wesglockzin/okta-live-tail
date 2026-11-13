@@ -5,8 +5,8 @@ import threading
 
 from config import env_config
 from credentials import client_id, private_key_pem
-from settings import verify_tls_from_env
 from okta_auth import OAuthClientCredentials
+from settings import verify_tls_from_env
 
 log = logging.getLogger("live-tail.oauth")
 
