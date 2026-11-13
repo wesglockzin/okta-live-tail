@@ -5,6 +5,11 @@ from functools import lru_cache
 from pathlib import Path
 
 import yaml
+from dotenv import load_dotenv
+
+# Every entry point (app, provision_app, bind_ro_admin) imports this module,
+# so they all read the same .env file.
+load_dotenv(Path(__file__).parent / ".env")
 
 _DEFAULT_CONFIG = Path(__file__).parent / "config.yaml"
 

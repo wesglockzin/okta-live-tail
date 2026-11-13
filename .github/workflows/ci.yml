@@ -21,12 +21,10 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest -q
-      - name: Audit project dependencies in a clean venv
+      - name: Audit the project's own dependencies
         run: |
-          python -m venv /tmp/audit-venv
-          /tmp/audit-venv/bin/pip install --upgrade pip setuptools pip-audit
-          /tmp/audit-venv/bin/pip install ".[dev]"
-          /tmp/audit-venv/bin/pip-audit --skip-editable
+          pip install pip-audit
+          pip-audit .
 
   gitleaks:
     runs-on: ubuntu-latest
