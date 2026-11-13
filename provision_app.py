@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 
 import requests
@@ -160,6 +161,16 @@ def stash_pem_to_keychain(env: str, pem: str) -> str:
     return var
 
 
+def write_key_file(env: str, pem: str, path: str) -> str:
+    """Write the PEM to a new file readable only by its owner; never overwrite."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(pem)
+    var = f"OKTA_LIVE_TAIL_{env.upper()}_PRIVATE_KEY"
+    log.info("wrote private key to %s (mode 0600); set it as %s", path, var)
+    return var
+
+
 def require_usable_keyring() -> None:
     """Exit before any Okta call if the new private key could not be stored."""
     try:
@@ -203,11 +214,20 @@ def main() -> None:
         action="store_true",
         help="Generate a new keypair, update the app's JWKS, restash the PEM.",
     )
+    p.add_argument(
+        "--key-out",
+        help="Write the new private key to this new file (mode 0600) instead of the OS "
+        "keyring. Put its contents in OKTA_LIVE_TAIL_<KEY>_PRIVATE_KEY.",
+    )
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
 
     if not args.dry_run:
-        require_usable_keyring()
+        if args.key_out:
+            if os.path.exists(args.key_out):
+                sys.exit(f"{args.key_out} already exists; nothing was changed in Okta.")
+        else:
+            require_usable_keyring()
 
     sess, base = _admin_sess(args.env)
     log.info("env=%s base=%s app_name=%s scopes=%s", args.env, base, args.app_name, args.scopes)
@@ -232,13 +252,16 @@ def main() -> None:
 
     grant_scopes(sess, base, app["id"], args.scopes)
     client_id = app.get("credentials", {}).get("oauthClient", {}).get("client_id") or app["id"]
-    var = stash_pem_to_keychain(args.env, pem)
+    if args.key_out:
+        var = write_key_file(args.env, pem, args.key_out)
+    else:
+        var = stash_pem_to_keychain(args.env, pem)
     pem = None
     update_config_with_client_id(args.env, args.app_name, client_id)
 
     log.info("=== %s ===", action.upper())
     log.info("app_id=%s client_id=%s kid=%s", app["id"], client_id, jwk["kid"])
-    log.info("private key stored in keyring %s / %s (not echoed)", KEYRING_SERVICE, var)
+    log.info("private key variable: %s (value not echoed)", var)
     log.info("scopes granted: %s", ", ".join(args.scopes))
 
 

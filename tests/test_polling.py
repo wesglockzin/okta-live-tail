@@ -102,6 +102,17 @@ def test_fetch_logs_http_error_keeps_status(monkeypatch):
     assert app_module.error_summary(info.value) == "Okta HTTP error 403"
 
 
+@pytest.mark.parametrize("fetch", ["_fetch_logs", "_refresh_apps"])
+def test_http_error_body_is_logged_on_the_server(monkeypatch, caplog, fetch):
+    _use(monkeypatch, [FakeResponse(status=403, body="missing scope okta.logs.read")])
+    args = (ENV, SINCE) if fetch == "_fetch_logs" else (ENV,)
+    with caplog.at_level("ERROR", logger="okta-live-tail"):
+        with pytest.raises(requests.HTTPError):
+            getattr(app_module, fetch)(*args)
+    assert "403" in caplog.text
+    assert "missing scope okta.logs.read" in caplog.text
+
+
 def test_error_summary_hides_exception_text():
     out = app_module.error_summary(RuntimeError("token abc123 leaked"))
     assert "abc123" not in out

@@ -17,8 +17,8 @@ you debug it, across multiple Okta orgs (e.g. DEV / STG / PROD).
 cp .env.example .env     # fill it in; AUTH_MODE=none is for local development only
 pip install -e . && python app.py     # http://127.0.0.1:5005
 ```
-Docker: `docker build -t okta-live-tail . && docker run --env-file .env -p 8080:8080 okta-live-tail`
-(mount your own org list and set `LIVE_TAIL_CONFIG` to its path).
+Docker: `docker compose up` (reads `.env`, serves on port 8080, mounts `./config.yaml` as the
+org list; edit that file or change the volume to use your own).
 
 ## Settings
 All settings are environment variables (a `.env` file is read too); `.env.example` lists them
@@ -54,12 +54,18 @@ Two modes per org, chosen with `OKTA_LIVE_TAIL_<KEY>_AUTH_MODE`:
 
 Credentials come from environment variables; the OS keyring is an optional fallback.
 
+`provision_app.py` stores the new private key in the OS keyring by default, and exits before
+calling Okta if none is usable. Without a keyring, pass `--key-out <new file>`: the key is
+written there with mode 0600 (an existing file is never overwritten). Put its contents in
+`OKTA_LIVE_TAIL_<KEY>_PRIVATE_KEY`, then delete the file.
+
 ## Stack
 Python 3.10+ · Flask · gunicorn. A `Dockerfile` is included (runs one worker, port 8080).
 
 ## Known limitations
 - **Pollers start on the first request** to each process, not at import.
 - **No lockfile yet**; dependencies have version ranges in `pyproject.toml`.
+- **`shared_*.py` modules** are still copies kept in this repository.
 - **Polling edge cases:** events that publish out of order may be missed, and a rate-limited
   (HTTP 429) poll keeps only the pages fetched so far.
 - **Scope mismatch in OAuth mode.** The tool requests `okta.logs.read` and

@@ -299,6 +299,13 @@ def _signon_mode_to_sso_type(mode: str) -> str:
     return "OTHER"
 
 
+def _check_status(env: str, r) -> None:
+    """Raise on an HTTP error after logging its status and body (server log only)."""
+    if r.status_code >= 400:
+        log.error("[%s] Okta HTTP %s: %s", env, r.status_code, (r.text or "")[:500])
+    r.raise_for_status()
+
+
 def _refresh_apps(env: str) -> int:
     cfg = ENV_CONFIGS[env]
     s = okta_session(env)
@@ -312,7 +319,7 @@ def _refresh_apps(env: str) -> int:
             log.warning("[%s] apps refresh 429 — sleeping %ss", env, wait)
             time.sleep(min(wait, 30))
             break
-        r.raise_for_status()
+        _check_status(env, r)
         for a in r.json() or []:
             aid = a.get("id")
             label = a.get("label") or a.get("name") or ""
@@ -362,7 +369,7 @@ def _fetch_logs(env: str, since: datetime) -> tuple[list[dict], str | None]:
             log.warning("[%s] 429 — sleeping %ss", env, wait)
             time.sleep(min(wait, 30))
             break
-        r.raise_for_status()
+        _check_status(env, r)
         batch = r.json() or []
         events.extend(batch)
         url = None

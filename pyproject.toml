@@ -11,6 +11,7 @@ requires-python = ">=3.10"
 license = { file = "LICENSE" }
 dependencies = [
     "flask>=3.0,<4",
+    "werkzeug>=3.0,<4",
     "requests>=2.31,<3",
     "python-dotenv>=1.0,<2",
     "keyring>=24,<30",
@@ -38,6 +39,9 @@ py-modules = [
     "shared_http",
     "shared_okta_auth",
 ]
+
+[tool.deptry]
+pep621_dev_dependency_groups = ["dev"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

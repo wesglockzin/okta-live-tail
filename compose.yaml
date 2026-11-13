@@ -1,0 +1,12 @@
+services:
+  okta-live-tail:
+    build: .
+    env_file: .env
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      # Org list inside the container; replace the mounted file with your own.
+      LIVE_TAIL_CONFIG: /etc/okta-live-tail/config.yaml
+    volumes:
+      - ./config.yaml:/etc/okta-live-tail/config.yaml:ro
