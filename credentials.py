@@ -1,13 +1,9 @@
 from __future__ import annotations
 
 from config import env_config
-from shared_okta_auth import from_env_or_keyring, load_pem
+from okta_auth import MissingCredentialError, from_env_or_keyring, load_pem
 
 KEYRING_SERVICE = "okta-live-tail"
-
-
-class MissingCredentialError(RuntimeError):
-    pass
 
 
 def client_id(env: str) -> str:
@@ -15,7 +11,7 @@ def client_id(env: str) -> str:
     cid = (cfg.get("client_id") or "").strip()
     if not cid:
         raise MissingCredentialError(
-            f"no client_id for {env!r} in config.yaml. Run:\n"
+            f"no client_id for {env!r} in the org config file. Run:\n"
             f"  python provision_app.py --env {env}"
         )
     return cid
@@ -28,9 +24,9 @@ def private_key_pem(env: str) -> str:
     if v:
         return v
     raise MissingCredentialError(
-        f"no private_key for {env!r}. Set via:\n"
-        f"  security add-generic-password -U -s {KEYRING_SERVICE} -a {var} -w\n"
-        f"(then paste the PEM contents and hit Return)"
+        f"no private_key for {env!r}. Set the environment variable {var} "
+        f"(PEM text, or base64 of it). Optionally store it in the OS keyring "
+        f"under service {KEYRING_SERVICE!r}, account {var!r}."
     )
 
 
@@ -40,8 +36,8 @@ def admin_token(env: str) -> str:
     if v:
         return v
     raise MissingCredentialError(
-        f"no okta-app-admin token for {env!r}. Set via:\n"
-        f"  security add-generic-password -U -s okta-app-admin -a {var} -w"
+        f"no admin token for {env!r}. Set the environment variable {var}, "
+        f"or store it in the OS keyring under service 'okta-app-admin', account {var!r}."
     )
 
 

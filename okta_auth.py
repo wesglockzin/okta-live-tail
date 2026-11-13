@@ -10,15 +10,17 @@ from typing import Callable
 
 __version__ = "1.0.0"
 
-_DEFAULT_LOG = logging.getLogger("shared_okta_auth")
+_DEFAULT_LOG = logging.getLogger("okta_auth")
 
 REFRESH_LEEWAY_SEC = 300
 ASSERTION_TTL_SEC = 60
 
 try:
     import keyring as _keyring
+    from keyring.errors import KeyringError as _KeyringError
 except ImportError:
     _keyring = None
+    _KeyringError = RuntimeError
 
 
 class MissingCredentialError(RuntimeError):
@@ -34,8 +36,8 @@ def from_env_or_keyring(var_name: str, keyring_service: str) -> str:
             v = (_keyring.get_password(keyring_service, var_name) or "").strip()
             if v:
                 return v
-        except Exception:
-            pass
+        except _KeyringError:
+            _DEFAULT_LOG.warning("keyring unavailable while looking up %s", var_name)
     return ""
 
 
@@ -46,8 +48,10 @@ def normalize_pem(raw: str) -> str:
     if "BEGIN" not in s:
         try:
             s = base64.b64decode(s).decode()
-        except Exception:
-            pass
+        except ValueError:
+            # Not base64 text (binascii.Error and UnicodeDecodeError are ValueErrors);
+            # keep the raw value and let the PEM parser report it.
+            _DEFAULT_LOG.debug("PEM value is not base64; using it as given")
     if "\\n" in s and "\n" not in s:
         s = s.replace("\\n", "\n")
     return s
@@ -57,27 +61,7 @@ def load_pem(var_name: str, keyring_service: str) -> str:
     return normalize_pem(from_env_or_keyring(var_name, keyring_service))
 
 
-def mount_retries(session, total: int = 4, backoff_factor: float = 0.5) -> None:
-    from requests.adapters import HTTPAdapter
-    from urllib3.util.retry import Retry
-    retry = Retry(
-        total=total,
-        connect=total,
-        read=total,
-        status=total,
-        backoff_factor=backoff_factor,
-        status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=frozenset({"GET", "HEAD", "OPTIONS"}),
-        raise_on_status=False,
-        respect_retry_after_header=True,
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
-
-
 class OAuthClientCredentials:
-
     def __init__(
         self,
         *,
@@ -86,7 +70,7 @@ class OAuthClientCredentials:
         scopes: str,
         client_id: str | Callable[[], str],
         private_key_pem: str | Callable[[], str],
-        verify: bool = False,
+        verify: bool = True,
         timeout: int = 20,
         refresh_leeway_sec: int = REFRESH_LEEWAY_SEC,
         assertion_ttl_sec: int = ASSERTION_TTL_SEC,
@@ -114,6 +98,7 @@ class OAuthClientCredentials:
 
     def _build_assertion(self, token_endpoint: str) -> str:
         import jwt
+
         cid = self._resolve(self._client_id, "client_id")
         now = int(time.time())
         claims = {
@@ -129,6 +114,7 @@ class OAuthClientCredentials:
 
     def _mint(self) -> tuple[str, float]:
         import requests
+
         token_endpoint = f"{self.base_url}/oauth2/v1/token"
         assertion = self._build_assertion(token_endpoint)
         resp = requests.post(
@@ -140,8 +126,7 @@ class OAuthClientCredentials:
             data={
                 "grant_type": "client_credentials",
                 "scope": self.scopes,
-                "client_assertion_type":
-                    "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
                 "client_assertion": assertion,
             },
             timeout=self._timeout,
@@ -155,11 +140,9 @@ class OAuthClientCredentials:
         body = resp.json()
         access = body.get("access_token") or ""
         if not access:
-            raise RuntimeError(
-                f"[{self.name}] mint succeeded but no access_token in body: {body}")
+            raise RuntimeError(f"[{self.name}] mint succeeded but the response had no access_token")
         expires_in = int(body.get("expires_in") or 3600)
-        self._log.info("[%s] minted OAuth access token (expires_in=%ds)",
-                       self.name, expires_in)
+        self._log.info("[%s] minted OAuth access token (expires_in=%ds)", self.name, expires_in)
         return access, time.time() + expires_in
 
     def access_token(self, force: bool = False) -> str:

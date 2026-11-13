@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "okta-live-tail"
+version = "0.1.19"
+description = "Live, per-event view of the Okta System Log for one or more orgs."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+    "flask>=3.0,<4",
+    "werkzeug>=3.0,<4",
+    "requests>=2.31,<3",
+    "python-dotenv>=1.0,<2",
+    "keyring>=24,<30",
+    "Authlib>=1.3,<2",
+    "gunicorn>=22,<26",
+    "markdown>=3.5,<4",
+    "PyJWT>=2.8,<3",
+    "PyYAML>=6,<7",
+    "cryptography>=42",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=9.0.3", "ruff>=0.5"]
+
+[tool.setuptools]
+py-modules = [
+    "app",
+    "bind_ro_admin",
+    "config",
+    "credentials",
+    "howto",
+    "http_session",
+    "oauth",
+    "okta_auth",
+    "provision_app",
+    "settings",
+]
+
+[tool.deptry]
+pep621_dev_dependency_groups = ["dev"]
+
+[tool.deptry.per_rule_ignores]
+# gunicorn is the server started by the Dockerfile CMD; it is never imported.
+DEP002 = ["gunicorn"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "BLE", "S110", "S112", "T20"]

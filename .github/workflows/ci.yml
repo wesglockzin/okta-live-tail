@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install --upgrade pip setuptools
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: pytest -q
+      - name: Check the lockfile is current
+        run: |
+          pip install uv
+          uv lock --check
+      - name: Audit the project's own dependencies
+        run: |
+          pip install pip-audit
+          pip-audit .
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks binary
+        run: |
+          base=https://github.com/gitleaks/gitleaks/releases/download/v8.28.0
+          curl -sSfL -O "$base/gitleaks_8.28.0_linux_x64.tar.gz"
+          curl -sSfL -O "$base/gitleaks_8.28.0_checksums.txt"
+          grep ' gitleaks_8.28.0_linux_x64.tar.gz$' gitleaks_8.28.0_checksums.txt | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          tar -xzf gitleaks_8.28.0_linux_x64.tar.gz -C "$RUNNER_TEMP/gitleaks" gitleaks
+          rm gitleaks_8.28.0_linux_x64.tar.gz gitleaks_8.28.0_checksums.txt
+          echo "$RUNNER_TEMP/gitleaks" >> "$GITHUB_PATH"
+      - name: Scan full history
+        run: gitleaks detect --source . --redact --verbose
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t okta-live-tail .
