@@ -100,6 +100,33 @@ def test_key_out_placeholder_removed_when_okta_step_fails(monkeypatch, calls, tm
     assert not out.exists()
 
 
+def test_original_error_survives_when_key_file_vanished(monkeypatch, calls, tmp_path):
+    out = tmp_path / "key.pem"
+
+    def boom(*a):
+        out.unlink()
+        raise RuntimeError("okta down")
+
+    monkeypatch.setattr(provision_app, "create_service_app", boom)
+    with pytest.raises(RuntimeError, match="okta down"):
+        _run(monkeypatch, "--key-out", str(out))
+
+
+def test_written_key_is_kept_and_fd_not_closed_twice(monkeypatch, calls, tmp_path):
+    def boom(*a):
+        raise RuntimeError("config read-only")
+
+    closed = []
+    real_close = os.close
+    monkeypatch.setattr(provision_app, "update_config_with_client_id", boom)
+    monkeypatch.setattr(provision_app.os, "close", lambda fd: (closed.append(fd), real_close(fd)))
+    out = tmp_path / "key.pem"
+    with pytest.raises(RuntimeError, match="config read-only"):
+        _run(monkeypatch, "--key-out", str(out))
+    assert out.read_text() == "PEM-NOT-REAL"
+    assert closed == []
+
+
 def test_update_config_writes_to_live_tail_config(monkeypatch, tmp_path):
     path = tmp_path / "orgs.yaml"
     path.write_text("envs:\n  one:\n    url: https://okta.example.test\n")

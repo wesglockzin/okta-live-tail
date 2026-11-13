@@ -241,11 +241,13 @@ def main() -> None:
         _provision(args, key_fd)
     except BaseException:
         if key_fd is not None:
-            with contextlib.suppress(OSError):  # fd already closed once the key was written
-                os.close(key_fd)
+            if not getattr(args, "key_fd_consumed", False):
+                with contextlib.suppress(OSError):
+                    os.close(key_fd)
             # An empty file means no key was ever written: remove our placeholder.
-            if os.path.getsize(args.key_out) == 0:
-                os.unlink(args.key_out)
+            with contextlib.suppress(OSError):
+                if os.path.getsize(args.key_out) == 0:
+                    os.unlink(args.key_out)
         raise
 
 
@@ -274,6 +276,7 @@ def _provision(args, key_fd) -> None:
     grant_scopes(sess, base, app["id"], args.scopes)
     client_id = app.get("credentials", {}).get("oauthClient", {}).get("client_id") or app["id"]
     if args.key_out:
+        args.key_fd_consumed = True  # fdopen below owns and closes the descriptor
         var = write_key_file(args.env, pem, key_fd, args.key_out)
     else:
         var = stash_pem_to_keychain(args.env, pem)
