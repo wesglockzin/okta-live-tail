@@ -8,12 +8,10 @@ import time
 import warnings
 from collections import deque
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from urllib.parse import urlsplit
 
 import requests
 from authlib.integrations.flask_client import OAuth
-from dotenv import load_dotenv
 from flask import (
     Flask,
     jsonify,
@@ -40,8 +38,6 @@ logging.basicConfig(
 log = logging.getLogger("okta-live-tail")
 
 KEYRING_SERVICE = "okta-live-tail"
-
-load_dotenv(Path(__file__).parent / ".env")
 
 APP_VERSION = "0.1.19"
 
