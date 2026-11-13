@@ -43,6 +43,10 @@ py-modules = [
 [tool.deptry]
 pep621_dev_dependency_groups = ["dev"]
 
+[tool.deptry.per_rule_ignores]
+# gunicorn is the server started by the Dockerfile CMD; it is never imported.
+DEP002 = ["gunicorn"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
