@@ -21,6 +21,10 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest -q
+      - name: Check the lockfile is current
+        run: |
+          pip install uv
+          uv lock --check
       - name: Audit the project's own dependencies
         run: |
           pip install pip-audit

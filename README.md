@@ -64,8 +64,6 @@ Python 3.10+ · Flask · gunicorn. A `Dockerfile` is included (runs one worker, 
 
 ## Known limitations
 - **Pollers start on the first request** to each process, not at import.
-- **No lockfile yet**; dependencies have version ranges in `pyproject.toml`.
-- **`shared_*.py` modules** are still copies kept in this repository.
 - **Polling edge cases:** events that publish out of order may be missed, and a rate-limited
   (HTTP 429) poll keeps only the pages fetched so far.
 - **Scope mismatch in OAuth mode.** The tool requests `okta.logs.read` and

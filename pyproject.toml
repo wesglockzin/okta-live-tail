@@ -32,12 +32,12 @@ py-modules = [
     "bind_ro_admin",
     "config",
     "credentials",
+    "howto",
+    "http_session",
     "oauth",
+    "okta_auth",
     "provision_app",
     "settings",
-    "shared_docs",
-    "shared_http",
-    "shared_okta_auth",
 ]
 
 [tool.deptry]

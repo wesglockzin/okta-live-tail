@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from config import env_config
-from shared_okta_auth import MissingCredentialError, from_env_or_keyring, load_pem
+from okta_auth import MissingCredentialError, from_env_or_keyring, load_pem
 
 KEYRING_SERVICE = "okta-live-tail"
 

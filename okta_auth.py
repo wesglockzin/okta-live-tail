@@ -10,7 +10,7 @@ from typing import Callable
 
 __version__ = "1.0.0"
 
-_DEFAULT_LOG = logging.getLogger("shared_okta_auth")
+_DEFAULT_LOG = logging.getLogger("okta_auth")
 
 REFRESH_LEEWAY_SEC = 300
 ASSERTION_TTL_SEC = 60
