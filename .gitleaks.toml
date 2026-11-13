@@ -1,0 +1,7 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "config.yaml private_key_var entries are environment variable names, not key material"
+paths = ['''^config\.yaml$''']
+regexes = ['''private_key_var:\s*OKTA_LIVE_TAIL_[A-Z0-9_]+_PRIVATE_KEY''']

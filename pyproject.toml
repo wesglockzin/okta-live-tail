@@ -19,11 +19,11 @@ dependencies = [
     "markdown>=3.5,<4",
     "PyJWT>=2.8,<3",
     "PyYAML>=6,<7",
-    "cryptography>=42,<50",
+    "cryptography>=50,<51",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<10", "ruff>=0.5"]
+dev = ["pytest>=9.0.3", "ruff>=0.5"]
 
 [tool.setuptools]
 py-modules = [

@@ -16,11 +16,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e ".[dev]" pip-audit
+      - run: pip install --upgrade pip setuptools
+      - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest -q
-      - run: pip-audit
+      - name: Audit project dependencies in a clean venv
+        run: |
+          python -m venv /tmp/audit-venv
+          /tmp/audit-venv/bin/pip install --upgrade pip setuptools pip-audit
+          /tmp/audit-venv/bin/pip install ".[dev]"
+          /tmp/audit-venv/bin/pip-audit --skip-editable
 
   gitleaks:
     runs-on: ubuntu-latest
