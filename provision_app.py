@@ -165,7 +165,9 @@ def update_config_with_client_id(env: str, app_name: str, client_id: str) -> Non
 
     import yaml
 
-    cfg_path = Path(__file__).parent / "config.yaml"
+    from config import config_path
+
+    cfg_path = config_path()
     text = cfg_path.read_text()
     data = yaml.safe_load(text) or {}
     block = data.setdefault("envs", {}).setdefault(env, {})
@@ -173,7 +175,7 @@ def update_config_with_client_id(env: str, app_name: str, client_id: str) -> Non
     block["private_key_var"] = f"OKTA_LIVE_TAIL_{env.upper()}_PRIVATE_KEY"
     block.setdefault("app_name", app_name)
     cfg_path.write_text(yaml.safe_dump(data, sort_keys=False, default_flow_style=False))
-    log.info("wrote client_id + private_key_var to config.yaml for env=%s", env)
+    log.info("wrote client_id + private_key_var to %s for env=%s", cfg_path, env)
 
 
 def main() -> None:
@@ -212,9 +214,9 @@ def main() -> None:
 
     grant_scopes(sess, base, app["id"], args.scopes)
     client_id = app.get("credentials", {}).get("oauthClient", {}).get("client_id") or app["id"]
-    update_config_with_client_id(args.env, args.app_name, client_id)
     var = stash_pem_to_keychain(args.env, pem)
     pem = None
+    update_config_with_client_id(args.env, args.app_name, client_id)
 
     log.info("=== %s ===", action.upper())
     log.info("app_id=%s client_id=%s kid=%s", app["id"], client_id, jwk["kid"])
