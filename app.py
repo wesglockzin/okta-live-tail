@@ -128,7 +128,12 @@ def _auth_gate():
         return
     if request.path.startswith("/static/") or request.path in PUBLIC_PATHS:
         return
-    if not session.get("user"):
+    user = session.get("user")
+    if user and not is_authorized(user.get("email")):
+        # Cookie issued before the allow-list existed, or the person was removed since.
+        session.clear()
+        user = None
+    if not user:
         if request.path.startswith("/api/"):
             return jsonify(error="unauthorized — session expired"), 401
         return redirect(url_for("login", next=request.path))
@@ -472,7 +477,7 @@ def oidc_callback():
     except Exception:  # noqa: BLE001 - web boundary; logged, client gets a generic 401
         log.exception("OIDC callback failed")
         return "OIDC auth failed", 401
-    if not is_authorized(userinfo.get("email")):
+    if userinfo.get("email_verified") is False or not is_authorized(userinfo.get("email")):
         log.warning("OIDC sign-in rejected: account not on the allow-list")
         return "Not authorized", 403
     session["user"] = {"email": userinfo.get("email"), "name": userinfo.get("name")}

@@ -56,6 +56,39 @@ def test_gate_allows_signed_in_session(client, oidc_settings):
     assert client.get("/api/events").status_code == 200
 
 
+def test_gate_rejects_session_of_person_not_on_allow_list(client, oidc_settings):
+    with client.session_transaction() as sess:
+        sess["user"] = {"email": "other@example.test"}
+    assert client.get("/api/events").status_code == 401
+    with client.session_transaction() as sess:
+        assert "user" not in sess
+
+
+class _FakeOidc:
+    def __init__(self, userinfo):
+        self.userinfo = userinfo
+
+    def authorize_access_token(self):
+        return {"userinfo": self.userinfo}
+
+
+@pytest.mark.parametrize(
+    ("userinfo", "status"),
+    [
+        ({"email": "other@example.test"}, 403),
+        ({"email": "ok@example.test", "email_verified": False}, 403),
+        ({"email": "ok@example.test", "email_verified": True}, 302),
+        ({"email": "ok@example.test"}, 302),
+    ],
+)
+def test_oidc_callback_enforces_allow_list(client, oidc_settings, monkeypatch, userinfo, status):
+    monkeypatch.setattr(app_module.oauth, "oidc", _FakeOidc(userinfo), raising=False)
+    r = client.get("/oidc/callback")
+    assert r.status_code == status
+    with client.session_transaction() as sess:
+        assert ("user" in sess) == (status == 302)
+
+
 def test_auth_mode_none_leaves_routes_open(client):
     assert client.get("/api/events").status_code == 200
 
