@@ -161,7 +161,6 @@ def stash_pem_to_keychain(env: str, pem: str) -> str:
 
 
 def update_config_with_client_id(env: str, app_name: str, client_id: str) -> None:
-    from pathlib import Path
 
     import yaml
 
