@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import sys
 
 import requests
@@ -12,6 +11,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend
 
 from config import env_config, known_envs
+from credentials import admin_token
+from settings import verify_tls_from_env
+from shared_okta_auth import MissingCredentialError
 
 log = logging.getLogger("livetail.provision")
 logging.basicConfig(
@@ -27,20 +29,16 @@ DEFAULT_SCOPES = [
 
 
 def _admin_token(env: str) -> str:
-    import keyring
-    var = {"dev": "OKTA_ADMIN_DEV_API_TOKEN",
-           "stg": "OKTA_ADMIN_STG_API_TOKEN",
-           "prod": "OKTA_ADMIN_PROD_API_TOKEN"}[env]
-    v = keyring.get_password("okta-app-admin", var) or os.environ.get(var, "")
-    if not v:
-        sys.exit(f"no admin token for {env} (Keychain okta-app-admin / {var}).")
-    return v.strip()
+    try:
+        return admin_token(env)
+    except MissingCredentialError as exc:
+        sys.exit(str(exc))
 
 
 def _admin_sess(env: str) -> tuple[requests.Session, str]:
     cfg = env_config(env)
     sess = requests.Session()
-    sess.verify = False
+    sess.verify = verify_tls_from_env()
     sess.headers.update({
         "Authorization": f"SSWS {_admin_token(env)}",
         "Accept": "application/json",
@@ -215,12 +213,10 @@ def main() -> None:
     var = stash_pem_to_keychain(args.env, pem)
     pem = None
 
-    print(f"\n=== {action.upper()} ===")
-    print(f"  app_id          : {app['id']}")
-    print(f"  client_id       : {client_id}")
-    print(f"  kid (public JWK): {jwk['kid']}")
-    print(f"  private key     : stored in Keychain {KEYRING_SERVICE} / {var} (NOT echoed)")
-    print(f"  scopes granted  : {', '.join(args.scopes)}")
+    log.info("=== %s ===", action.upper())
+    log.info("app_id=%s client_id=%s kid=%s", app["id"], client_id, jwk["kid"])
+    log.info("private key stored in keyring %s / %s (not echoed)", KEYRING_SERVICE, var)
+    log.info("scopes granted: %s", ", ".join(args.scopes))
 
 
 if __name__ == "__main__":

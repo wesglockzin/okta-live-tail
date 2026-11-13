@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
 import yaml
 
-_ROOT = Path(__file__).parent
-_CONFIG = _ROOT / "config.yaml"
+_DEFAULT_CONFIG = Path(__file__).parent / "config.yaml"
+
+
+def config_path() -> Path:
+    """Org list location: LIVE_TAIL_CONFIG, else config.yaml next to the code."""
+    override = (os.environ.get("LIVE_TAIL_CONFIG") or "").strip()
+    return Path(override) if override else _DEFAULT_CONFIG
 
 
 @lru_cache(maxsize=1)
 def load_config() -> dict:
-    with _CONFIG.open() as f:
+    with config_path().open() as f:
         return yaml.safe_load(f)
 
 
@@ -27,4 +33,4 @@ def known_envs() -> list[str]:
 
 
 def default_env() -> str:
-    return load_config().get("default_env", "dev")
+    return load_config().get("default_env") or known_envs()[0]

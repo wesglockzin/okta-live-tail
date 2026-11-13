@@ -5,33 +5,41 @@ import os
 import sys
 import threading
 import time
+import warnings
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import requests
 from authlib.integrations.flask_client import OAuth
 from dotenv import load_dotenv
 from flask import (
-    Flask, jsonify, redirect, render_template, render_template_string,
-    request, session, url_for,
+    Flask,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
 )
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from shared_http import make_session
+import oauth as token_source
+from config import default_env, env_config, known_envs
+from settings import load_settings
 from shared_docs import register_howto
+from shared_http import make_session
+from shared_okta_auth import from_env_or_keyring
 
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s [%(levelname)s] %(name)s | %(message)s",
-                    handlers=[logging.StreamHandler(sys.stdout)])
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s | %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
 log = logging.getLogger("okta-live-tail")
 
-try:
-    import keyring as _keyring
-    KEYRING_SERVICE = "okta-live-tail"
-except ImportError:
-    _keyring = None
-    KEYRING_SERVICE = ""
+KEYRING_SERVICE = "okta-live-tail"
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -39,60 +47,88 @@ APP_VERSION = "0.1.19"
 
 UNIT_ALIASES: dict[str, str] = {}
 
-FLASK_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY") or os.urandom(32).hex()
-OIDC_ISSUER = os.environ.get("OIDC_ISSUER", "").rstrip("/")
-OIDC_CLIENT_ID = os.environ.get("OIDC_CLIENT_ID", "")
-OIDC_CLIENT_SECRET = os.environ.get("OIDC_CLIENT_SECRET", "")
-APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5005").rstrip("/")
+# Raises SettingsError (naming the setting) when auth or the session key is unset
+# and AUTH_MODE=none was not chosen explicitly.
+settings = load_settings()
 OIDC_SCOPES = "openid email profile"
-OIDC_ENABLED = bool(OIDC_ISSUER and OIDC_CLIENT_ID and OIDC_CLIENT_SECRET)
+BUFFER_SIZE = settings.buffer_size
+DEDUP_RING_SIZE = settings.dedup_ring_size
 
-ENV_CONFIGS: dict[str, dict] = {
-    "dev":  {"label": "DEV",  "url": "https://host.example.com", "token_var": "OKTA_LIVE_TAIL_DEV_API_TOKEN"},
-    "stg":  {"label": "STG",  "url": "https://host.example.com", "token_var": "OKTA_LIVE_TAIL_STG_API_TOKEN"},
-    "prod": {"label": "PROD", "url": "https://host.example.com", "token_var": "OKTA_LIVE_TAIL_PROD_API_TOKEN"},
-}
 
-AUTH_MODE: dict[str, str] = {
-    "dev":  os.environ.get("OKTA_LIVE_TAIL_DEV_AUTH_MODE",  "oauth"),
-    "stg":  os.environ.get("OKTA_LIVE_TAIL_STG_AUTH_MODE",  "oauth"),
-    "prod": os.environ.get("OKTA_LIVE_TAIL_PROD_AUTH_MODE", "oauth"),
-}
-DEFAULT_ENV = os.environ.get("DEFAULT_ENV", "prod")
-POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "12"))
-BUFFER_SIZE = int(os.environ.get("BUFFER_SIZE", "500"))
-DEDUP_RING_SIZE = int(os.environ.get("DEDUP_RING_SIZE", "5000"))
-INITIAL_LOOKBACK_MINUTES = int(os.environ.get("INITIAL_LOOKBACK_MINUTES", "5"))
-APPS_REFRESH_SECONDS = int(os.environ.get("APPS_REFRESH_SECONDS", "1800"))
+def _build_orgs() -> dict[str, dict]:
+    """Orgs come from the single config file (LIVE_TAIL_CONFIG), any number of them."""
+    orgs = {}
+    for key in known_envs():
+        cfg = env_config(key)
+        orgs[key] = {
+            "label": cfg.get("label") or key.upper(),
+            "url": cfg["url"].rstrip("/"),
+            "token_var": cfg.get("token_var") or f"OKTA_LIVE_TAIL_{key.upper()}_API_TOKEN",
+            "auth_mode": os.environ.get(f"OKTA_LIVE_TAIL_{key.upper()}_AUTH_MODE", "oauth"),
+        }
+    return orgs
 
-if not OIDC_ENABLED:
-    log.warning("OIDC is NOT configured — auth gate disabled, app is open.")
+
+ENV_CONFIGS: dict[str, dict] = _build_orgs()
+DEFAULT_ENV = settings.default_env or default_env()
+
+if settings.auth_mode == "none":
+    log.warning("AUTH_MODE=none — auth gate disabled, app is open.")
+if not settings.verify_tls:
+    log.warning("OKTA_VERIFY_TLS is off — TLS certificates are NOT verified.")
+    warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
 app = Flask(__name__)
-app.secret_key = FLASK_SECRET_KEY
+app.secret_key = settings.secret_key
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = APP_BASE_URL.startswith("https://")
+app.config["SESSION_COOKIE_SECURE"] = settings.app_base_url.startswith("https://")
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 
 oauth = OAuth(app)
-if OIDC_ENABLED:
+if settings.auth_mode == "oidc":
     oauth.register(
-        name="okta",
-        client_id=OIDC_CLIENT_ID,
-        client_secret=OIDC_CLIENT_SECRET,
-        server_metadata_url=f"{OIDC_ISSUER}/.well-known/openid-configuration",
+        name="oidc",
+        client_id=settings.oidc_client_id,
+        client_secret=settings.oidc_client_secret,
+        server_metadata_url=f"{settings.oidc_issuer}/.well-known/openid-configuration",
         client_kwargs={"scope": OIDC_SCOPES, "code_challenge_method": "S256"},
     )
 
 PUBLIC_PATHS = {
-    "/health", "/login", "/oidc/login", "/oidc/callback", "/logout", "/favicon.ico",
+    "/health",
+    "/login",
+    "/oidc/login",
+    "/oidc/callback",
+    "/logout",
+    "/favicon.ico",
 }
+
+
+def safe_next(nxt: str | None) -> str:
+    """Accept only a same-site relative path; anything else becomes '/'."""
+    if not nxt or not nxt.startswith("/") or nxt.startswith("//"):
+        return "/"
+    if "\\" in nxt or any(ord(c) < 32 for c in nxt):
+        return "/"
+    parts = urlsplit(nxt)
+    if parts.scheme or parts.netloc:
+        return "/"
+    return nxt
+
+
+def is_authorized(email: str | None) -> bool:
+    """True when the signed-in email is on the allow-list (address or domain)."""
+    addr = (email or "").strip().lower()
+    if "@" not in addr:
+        return False
+    return addr in settings.allowed_emails or addr.rsplit("@", 1)[1] in settings.allowed_domains
 
 
 @app.before_request
 def _auth_gate():
-    if not OIDC_ENABLED:
+    start_workers()
+    if settings.auth_mode == "none":
         return
     if request.path.startswith("/static/") or request.path in PUBLIC_PATHS:
         return
@@ -103,27 +139,18 @@ def _auth_gate():
 
 
 def get_token(var_name: str) -> str:
-    v = (os.environ.get(var_name) or "").strip()
-    if v:
-        return v
-    if _keyring:
-        try:
-            v = _keyring.get_password(KEYRING_SERVICE, var_name) or ""
-            if v.strip():
-                return v.strip()
-        except Exception:
-            pass
-    log.warning("get_token: no value found for %s", var_name)
-    return ""
+    v = from_env_or_keyring(var_name, KEYRING_SERVICE)
+    if not v:
+        log.warning("get_token: no value found for %s", var_name)
+    return v
 
 
 def okta_session(env: str) -> requests.Session:
     cfg = ENV_CONFIGS[env]
     s = make_session("LiveTail", APP_VERSION)
-    s.verify = False
-    if AUTH_MODE.get(env) == "oauth":
-        import oauth
-        s.headers["Authorization"] = f"Bearer {oauth.access_token(env)}"
+    s.verify = settings.verify_tls
+    if cfg["auth_mode"] == "oauth":
+        s.headers["Authorization"] = f"Bearer {token_source.access_token(env)}"
     else:
         s.headers["Authorization"] = f"SSWS {get_token(cfg['token_var'])}"
     return s
@@ -301,9 +328,9 @@ def _apps_loop(env: str) -> None:
     while True:
         try:
             _refresh_apps(env)
-        except Exception:
+        except Exception:  # noqa: BLE001 - background loop boundary; logged, retried next cycle
             log.exception("[%s] apps refresh error", env)
-        time.sleep(APPS_REFRESH_SECONDS)
+        time.sleep(settings.apps_refresh_seconds)
 
 
 def _fetch_logs(env: str, since: datetime) -> tuple[list[dict], str | None]:
@@ -338,15 +365,28 @@ def _fetch_logs(env: str, since: datetime) -> tuple[list[dict], str | None]:
     return events, None
 
 
+def error_summary(exc: BaseException) -> str:
+    """Client-safe error text: an HTTP error keeps its status, nothing else leaks."""
+    if isinstance(exc, requests.HTTPError) and exc.response is not None:
+        return f"Okta HTTP error {exc.response.status_code}"
+    return f"{type(exc).__name__} (see server log)"
+
+
 def _poll_loop(env: str) -> None:
     state = _env_state[env]
-    state["cursor"] = datetime.now(timezone.utc) - timedelta(minutes=INITIAL_LOOKBACK_MINUTES)
+    state["cursor"] = datetime.now(timezone.utc) - timedelta(
+        minutes=settings.initial_lookback_minutes
+    )
     try:
         _refresh_apps(env)
-    except Exception:
+    except Exception:  # noqa: BLE001 - logged; the apps loop retries
         log.exception("[%s] initial apps refresh failed (will retry in apps loop)", env)
-    log.info("[%s] poll loop starting (interval=%ds, lookback=%dmin)",
-             env, POLL_INTERVAL_SECONDS, INITIAL_LOOKBACK_MINUTES)
+    log.info(
+        "[%s] poll loop starting (interval=%ds, lookback=%dmin)",
+        env,
+        settings.poll_interval_seconds,
+        settings.initial_lookback_minutes,
+    )
     while True:
         try:
             since = state["cursor"]
@@ -366,11 +406,11 @@ def _poll_loop(env: str) -> None:
                 state["last_error"] = None
             if added:
                 log.info("[%s] +%d (buffer=%d)", env, added, len(state["events"]))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - background loop boundary; logged, retried
             log.exception("[%s] poll error", env)
             with _state_lock:
-                state["last_error"] = str(e)[:200]
-        time.sleep(POLL_INTERVAL_SECONDS)
+                state["last_error"] = error_summary(e)
+        time.sleep(settings.poll_interval_seconds)
 
 
 def _matches(ev: dict, tokens: list[str]) -> bool:
@@ -392,12 +432,12 @@ def health():
 
 @app.route("/login")
 def login():
-    if not OIDC_ENABLED:
+    if settings.auth_mode == "none":
         session["user"] = {"email": "local-dev"}
         return redirect(url_for("index"))
-    nxt = request.args.get("next", "/")
-    redirect_uri = APP_BASE_URL + url_for("oidc_callback")
-    return oauth.okta.authorize_redirect(redirect_uri, state=nxt)
+    nxt = safe_next(request.args.get("next"))
+    redirect_uri = settings.app_base_url + url_for("oidc_callback")
+    return oauth.oidc.authorize_redirect(redirect_uri, state=nxt)
 
 
 @app.route("/oidc/login")
@@ -407,20 +447,19 @@ def oidc_login():
 
 @app.route("/oidc/callback")
 def oidc_callback():
-    if not OIDC_ENABLED:
+    if settings.auth_mode == "none":
         return redirect(url_for("index"))
     try:
-        token = oauth.okta.authorize_access_token()
-        userinfo = token.get("userinfo") or oauth.okta.parse_id_token(token)
-        session["user"] = {
-            "email": userinfo.get("email"),
-            "name": userinfo.get("name"),
-        }
-    except Exception:
+        token = oauth.oidc.authorize_access_token()
+        userinfo = token.get("userinfo") or oauth.oidc.parse_id_token(token)
+    except Exception:  # noqa: BLE001 - web boundary; logged, client gets a generic 401
         log.exception("OIDC callback failed")
         return "OIDC auth failed", 401
-    nxt = request.args.get("state") or "/"
-    return redirect(nxt if nxt.startswith("/") else "/")
+    if not is_authorized(userinfo.get("email")):
+        log.warning("OIDC sign-in rejected: account not on the allow-list")
+        return "Not authorized", 403
+    session["user"] = {"email": userinfo.get("email"), "name": userinfo.get("name")}
+    return redirect(safe_next(request.args.get("state")))
 
 
 @app.route("/logout")
@@ -482,22 +521,22 @@ def api_events():
     })
 
 
+_workers_lock = threading.Lock()
+_workers_started = False
+
+
 def start_workers():
-    try:
-        import urllib3
-        urllib3.disable_warnings()
-    except Exception:
-        pass
+    """Start the pollers once per process (on first request, or at `python app.py`)."""
+    global _workers_started
+    with _workers_lock:
+        if _workers_started:
+            return
+        _workers_started = True
     for env in ENV_CONFIGS:
-        threading.Thread(target=_poll_loop, daemon=True,
-                         name=f"poller-{env}", args=(env,)).start()
-        threading.Thread(target=_apps_loop, daemon=True,
-                         name=f"apps-{env}", args=(env,)).start()
-
-
-start_workers()
+        threading.Thread(target=_poll_loop, daemon=True, name=f"poller-{env}", args=(env,)).start()
+        threading.Thread(target=_apps_loop, daemon=True, name=f"apps-{env}", args=(env,)).start()
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5005))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    start_workers()
+    app.run(host=settings.host, port=settings.port, debug=False)
