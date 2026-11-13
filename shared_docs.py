@@ -5,7 +5,6 @@ from pathlib import Path
 import markdown
 from flask import Flask, render_template_string
 
-
 _PAGE_TEMPLATE = """\
 <!DOCTYPE html>
 <html lang="en" data-theme="light">

@@ -62,7 +62,6 @@ def load_pem(var_name: str, keyring_service: str) -> str:
 
 
 class OAuthClientCredentials:
-
     def __init__(
         self,
         *,
@@ -99,6 +98,7 @@ class OAuthClientCredentials:
 
     def _build_assertion(self, token_endpoint: str) -> str:
         import jwt
+
         cid = self._resolve(self._client_id, "client_id")
         now = int(time.time())
         claims = {
@@ -114,6 +114,7 @@ class OAuthClientCredentials:
 
     def _mint(self) -> tuple[str, float]:
         import requests
+
         token_endpoint = f"{self.base_url}/oauth2/v1/token"
         assertion = self._build_assertion(token_endpoint)
         resp = requests.post(
@@ -125,8 +126,7 @@ class OAuthClientCredentials:
             data={
                 "grant_type": "client_credentials",
                 "scope": self.scopes,
-                "client_assertion_type":
-                    "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
                 "client_assertion": assertion,
             },
             timeout=self._timeout,
@@ -140,11 +140,9 @@ class OAuthClientCredentials:
         body = resp.json()
         access = body.get("access_token") or ""
         if not access:
-            raise RuntimeError(
-                f"[{self.name}] mint succeeded but the response had no access_token")
+            raise RuntimeError(f"[{self.name}] mint succeeded but the response had no access_token")
         expires_in = int(body.get("expires_in") or 3600)
-        self._log.info("[%s] minted OAuth access token (expires_in=%ds)",
-                       self.name, expires_in)
+        self._log.info("[%s] minted OAuth access token (expires_in=%ds)", self.name, expires_in)
         return access, time.time() + expires_in
 
     def access_token(self, force: bool = False) -> str:

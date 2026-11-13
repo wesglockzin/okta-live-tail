@@ -5,7 +5,16 @@ import app as app_module
 
 @pytest.mark.parametrize(
     "value",
-    ["//evil.test", "//evil.test/x", "https://evil.test", "/\\evil.test", "evil", "", None, "/a\nb"],
+    [
+        "//evil.test",
+        "//evil.test/x",
+        "https://evil.test",
+        "/\\evil.test",
+        "evil",
+        "",
+        None,
+        "/a\nb",
+    ],
 )
 def test_safe_next_rejects_offsite_targets(value):
     assert app_module.safe_next(value) == "/"

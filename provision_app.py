@@ -6,9 +6,9 @@ import logging
 import sys
 
 import requests
+from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.backends import default_backend
 
 from config import env_config, known_envs
 from credentials import admin_token
@@ -39,24 +39,25 @@ def _admin_sess(env: str) -> tuple[requests.Session, str]:
     cfg = env_config(env)
     sess = requests.Session()
     sess.verify = verify_tls_from_env()
-    sess.headers.update({
-        "Authorization": f"SSWS {_admin_token(env)}",
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    })
+    sess.headers.update(
+        {
+            "Authorization": f"SSWS {_admin_token(env)}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+    )
     return sess, cfg["url"].rstrip("/")
 
 
 def _gen_rsa_keypair() -> tuple[str, dict]:
     import hashlib
 
-    key = rsa.generate_private_key(
-        public_exponent=65537, key_size=2048, backend=default_backend()
-    )
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
     pub_numbers = key.public_key().public_numbers()
 
     def _b64(n: int) -> str:
         import base64
+
         b = n.to_bytes((n.bit_length() + 7) // 8, "big")
         return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
 
@@ -78,8 +79,7 @@ def _gen_rsa_keypair() -> tuple[str, dict]:
 
 
 def find_existing_app(sess: requests.Session, base: str, app_name: str) -> dict | None:
-    r = sess.get(f"{base}/api/v1/apps",
-                 params={"q": app_name, "limit": 50})
+    r = sess.get(f"{base}/api/v1/apps", params={"q": app_name, "limit": 50})
     r.raise_for_status()
     for app in r.json():
         if app.get("label") == app_name:
@@ -87,8 +87,7 @@ def find_existing_app(sess: requests.Session, base: str, app_name: str) -> dict 
     return None
 
 
-def create_service_app(sess: requests.Session, base: str, app_name: str,
-                       jwk: dict) -> dict:
+def create_service_app(sess: requests.Session, base: str, app_name: str, jwk: dict) -> dict:
     payload = {
         "name": "oidc_client",
         "label": app_name,
@@ -134,8 +133,7 @@ def update_app_jwks(sess: requests.Session, base: str, app: dict, jwk: dict) -> 
     return r.json()
 
 
-def grant_scopes(sess: requests.Session, base: str, app_id: str,
-                 scopes: list[str]) -> list[str]:
+def grant_scopes(sess: requests.Session, base: str, app_id: str, scopes: list[str]) -> list[str]:
     granted = []
     for scope in scopes:
         payload = {"scopeId": scope, "issuer": base}
@@ -144,8 +142,8 @@ def grant_scopes(sess: requests.Session, base: str, app_id: str,
             granted.append(scope)
             log.info("granted %s", scope)
         elif r.status_code in (400, 409) and any(
-                s in r.text.lower() for s in
-                ("exists", "duplicate", "already been", "already granted")):
+            s in r.text.lower() for s in ("exists", "duplicate", "already been", "already granted")
+        ):
             granted.append(scope)
             log.info("scope %s already granted (idempotent)", scope)
         else:
@@ -155,16 +153,18 @@ def grant_scopes(sess: requests.Session, base: str, app_id: str,
 
 def stash_pem_to_keychain(env: str, pem: str) -> str:
     import keyring
+
     var = f"OKTA_LIVE_TAIL_{env.upper()}_PRIVATE_KEY"
     keyring.set_password(KEYRING_SERVICE, var, pem)
-    log.info("stored private key in Keychain %s / %s (value not echoed)",
-             KEYRING_SERVICE, var)
+    log.info("stored private key in Keychain %s / %s (value not echoed)", KEYRING_SERVICE, var)
     return var
 
 
 def update_config_with_client_id(env: str, app_name: str, client_id: str) -> None:
-    import yaml
     from pathlib import Path
+
+    import yaml
+
     cfg_path = Path(__file__).parent / "config.yaml"
     text = cfg_path.read_text()
     data = yaml.safe_load(text) or {}
@@ -181,19 +181,23 @@ def main() -> None:
     p.add_argument("--env", choices=known_envs(), required=True)
     p.add_argument("--app-name", default="Okta Live Tail")
     p.add_argument("--scopes", nargs="+", default=DEFAULT_SCOPES)
-    p.add_argument("--rotate-key", action="store_true",
-                   help="Generate a new keypair, update the app's JWKS, restash the PEM.")
+    p.add_argument(
+        "--rotate-key",
+        action="store_true",
+        help="Generate a new keypair, update the app's JWKS, restash the PEM.",
+    )
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
 
     sess, base = _admin_sess(args.env)
-    log.info("env=%s base=%s app_name=%s scopes=%s",
-             args.env, base, args.app_name, args.scopes)
+    log.info("env=%s base=%s app_name=%s scopes=%s", args.env, base, args.app_name, args.scopes)
 
     existing = find_existing_app(sess, base, args.app_name)
 
     if args.dry_run:
-        action = "create" if not existing else ("rotate-key" if args.rotate_key else "upgrade-to-jwk")
+        action = (
+            "create" if not existing else ("rotate-key" if args.rotate_key else "upgrade-to-jwk")
+        )
         log.info("[dry-run] would %s for %s", action, args.app_name)
         return
 
@@ -207,8 +211,7 @@ def main() -> None:
         action = "created"
 
     grant_scopes(sess, base, app["id"], args.scopes)
-    client_id = (app.get("credentials", {}).get("oauthClient", {}).get("client_id")
-                 or app["id"])
+    client_id = app.get("credentials", {}).get("oauthClient", {}).get("client_id") or app["id"]
     update_config_with_client_id(args.env, args.app_name, client_id)
     var = stash_pem_to_keychain(args.env, pem)
     pem = None

@@ -170,7 +170,8 @@ _env_state: dict[str, dict] = {
         "events_seen": 0,
         "apps_by_id": {},
         "apps_refreshed_at": None,
-    } for env in ENV_CONFIGS
+    }
+    for env in ENV_CONFIGS
 }
 
 
@@ -179,17 +180,23 @@ def _normalize_event(e: dict, apps_by_id: dict[str, dict] | None = None) -> dict
     actor = e.get("actor") or {}
     outcome = e.get("outcome") or {}
     client = e.get("client") or {}
-    debug = ((e.get("debugContext") or {}).get("debugData") or {})
+    debug = (e.get("debugContext") or {}).get("debugData") or {}
     event_type = e.get("eventType") or ""
     sign_on_mode = (debug.get("signOnMode") or "").strip()
 
-    _actor_for_type = (e.get("actor") or {})
+    _actor_for_type = e.get("actor") or {}
     _actor_type = (_actor_for_type.get("type") or "").strip()
     if _actor_type in ("PublicClientApp", "TrustedApp", "ServiceApp"):
         _resolved_app_id = _actor_for_type.get("id") or ""
     else:
-        _at = next((t for t in (e.get("target") or [])
-                    if (t or {}).get("type") in ("AppInstance", "OAuth2Client")), None)
+        _at = next(
+            (
+                t
+                for t in (e.get("target") or [])
+                if (t or {}).get("type") in ("AppInstance", "OAuth2Client")
+            ),
+            None,
+        )
         _resolved_app_id = (_at or {}).get("id") or ""
     _looked_up_sso = ((apps_by_id or {}).get(_resolved_app_id) or {}).get("sso_type")
 
@@ -213,8 +220,9 @@ def _normalize_event(e: dict, apps_by_id: dict[str, dict] | None = None) -> dict
 
     actor_type = (actor.get("type") or "").strip()
     user_target = next((t for t in targets if (t or {}).get("type") == "User"), None)
-    app_target = next((t for t in targets
-                       if (t or {}).get("type") in ("AppInstance", "OAuth2Client")), None)
+    app_target = next(
+        (t for t in targets if (t or {}).get("type") in ("AppInstance", "OAuth2Client")), None
+    )
 
     if actor_type == "User":
         user_id = actor.get("id") or ""
@@ -223,8 +231,9 @@ def _normalize_event(e: dict, apps_by_id: dict[str, dict] | None = None) -> dict
         app_name = (app_target or {}).get("displayName") or ""
     else:
         user_id = (user_target or {}).get("id") or ""
-        user_disp = (user_target or {}).get("alternateId") \
-                    or (user_target or {}).get("displayName") or ""
+        user_disp = (
+            (user_target or {}).get("alternateId") or (user_target or {}).get("displayName") or ""
+        )
         app_id = actor.get("id") or ""
         app_name = actor.get("displayName") or actor.get("alternateId") or ""
     if app_name.startswith("http://") or app_name.startswith("https://"):
@@ -303,8 +312,9 @@ def _refresh_apps(env: str) -> int:
             time.sleep(min(wait, 30))
             break
         r.raise_for_status()
-        for a in (r.json() or []):
-            aid = a.get("id"); label = a.get("label") or a.get("name") or ""
+        for a in r.json() or []:
+            aid = a.get("id")
+            label = a.get("label") or a.get("name") or ""
             if aid:
                 new_map[aid] = {
                     "label": label,
@@ -394,8 +404,11 @@ def _poll_loop(env: str) -> None:
             added = _ingest(env, events)
             if events:
                 latest = max(
-                    (datetime.fromisoformat(e["published"].replace("Z", "+00:00"))
-                     for e in events if e.get("published")),
+                    (
+                        datetime.fromisoformat(e["published"].replace("Z", "+00:00"))
+                        for e in events
+                        if e.get("published")
+                    ),
                     default=None,
                 )
                 if latest:
@@ -416,12 +429,20 @@ def _poll_loop(env: str) -> None:
 def _matches(ev: dict, tokens: list[str]) -> bool:
     if not tokens:
         return True
-    hay = " ".join(str(v) for v in (
-        ev.get("user", ""), ev.get("user_id", ""), ev.get("user_display", ""),
-        ev.get("app", ""), ev.get("app_id", ""),
-        ev.get("event_type", ""), ev.get("reason", ""),
-        ev.get("ip", ""), ev.get("request_uri", ""),
-    )).lower()
+    hay = " ".join(
+        str(v)
+        for v in (
+            ev.get("user", ""),
+            ev.get("user_id", ""),
+            ev.get("user_display", ""),
+            ev.get("app", ""),
+            ev.get("app_id", ""),
+            ev.get("event_type", ""),
+            ev.get("reason", ""),
+            ev.get("ip", ""),
+            ev.get("request_uri", ""),
+        )
+    ).lower()
     return all(t in hay for t in tokens)
 
 
@@ -473,11 +494,13 @@ register_howto(app, tool_name="Okta Live Tail")
 
 @app.route("/")
 def index():
-    return render_template("index.html",
-                           version=APP_VERSION,
-                           user=session.get("user") or {"email": "local-dev"},
-                           envs=list(ENV_CONFIGS.keys()),
-                           default_env=DEFAULT_ENV)
+    return render_template(
+        "index.html",
+        version=APP_VERSION,
+        user=session.get("user") or {"email": "local-dev"},
+        envs=list(ENV_CONFIGS.keys()),
+        default_env=DEFAULT_ENV,
+    )
 
 
 @app.route("/api/events/raw/<uuid>")
@@ -507,18 +530,20 @@ def api_events():
         last_err = state["last_error"]
         seen = state["events_seen"]
         buffer_len = len(state["events"])
-    return jsonify({
-        "env": env,
-        "version": APP_VERSION,
-        "rows": rows,
-        "meta": {
-            "buffer_len": buffer_len,
-            "events_seen": seen,
-            "last_poll": poll_ts.isoformat() if poll_ts else None,
-            "last_error": last_err,
-            "filter_tokens": tokens,
-        },
-    })
+    return jsonify(
+        {
+            "env": env,
+            "version": APP_VERSION,
+            "rows": rows,
+            "meta": {
+                "buffer_len": buffer_len,
+                "events_seen": seen,
+                "last_poll": poll_ts.isoformat() if poll_ts else None,
+                "last_error": last_err,
+                "filter_tokens": tokens,
+            },
+        }
+    )
 
 
 _workers_lock = threading.Lock()

@@ -4,8 +4,8 @@ from __future__ import annotations
 import argparse
 import logging
 
-from provision_app import _admin_sess
 from config import known_envs, load_config
+from provision_app import _admin_sess
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s [%(levelname)s] %(message)s")
 log = logging.getLogger("livetail.bind-ro-admin")
@@ -15,7 +15,9 @@ def _load_client_id(env: str) -> str:
     cfg = load_config()
     cid = cfg["envs"][env].get("client_id") or ""
     if not cid:
-        raise SystemExit(f"config.yaml has no client_id for env={env}. Run provision_app.py --env {env} first.")
+        raise SystemExit(
+            f"config.yaml has no client_id for env={env}. Run provision_app.py --env {env} first."
+        )
     return cid
 
 

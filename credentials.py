@@ -11,8 +11,7 @@ def client_id(env: str) -> str:
     cid = (cfg.get("client_id") or "").strip()
     if not cid:
         raise MissingCredentialError(
-            f"no client_id for {env!r} in config.yaml. Run:\n"
-            f"  python provision_app.py --env {env}"
+            f"no client_id for {env!r} in config.yaml. Run:\n  python provision_app.py --env {env}"
         )
     return cid
 
