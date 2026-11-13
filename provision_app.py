@@ -164,14 +164,14 @@ def require_usable_keyring() -> None:
     """Exit before any Okta call if the new private key could not be stored."""
     try:
         import keyring
-        from keyring.backends import fail
+        from keyring.backends import fail, null
 
         backend = keyring.get_keyring()
     except ImportError:
-        sys.exit("--rotate-key needs a usable OS keyring to store the new key; none is installed.")
-    if isinstance(backend, fail.Keyring):
+        sys.exit("Provisioning needs a usable OS keyring to store the new key; none is installed.")
+    if isinstance(backend, (fail.Keyring, null.Keyring)):
         sys.exit(
-            "--rotate-key needs a usable OS keyring to store the new key; "
+            "Provisioning needs a usable OS keyring to store the new key; "
             "none is available here. Nothing was changed in Okta."
         )
 
@@ -206,7 +206,7 @@ def main() -> None:
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
 
-    if args.rotate_key and not args.dry_run:
+    if not args.dry_run:
         require_usable_keyring()
 
     sess, base = _admin_sess(args.env)
