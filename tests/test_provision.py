@@ -82,6 +82,24 @@ def test_key_out_refuses_existing_file_before_okta(monkeypatch, calls, tmp_path)
     assert out.read_text() == "keep"
 
 
+def test_key_out_in_missing_directory_exits_before_okta(monkeypatch, calls, tmp_path):
+    out = tmp_path / "no-such-dir" / "key.pem"
+    with pytest.raises(SystemExit):
+        _run(monkeypatch, "--key-out", str(out))
+    assert calls == []
+
+
+def test_key_out_placeholder_removed_when_okta_step_fails(monkeypatch, calls, tmp_path):
+    def boom(*a):
+        raise RuntimeError("okta down")
+
+    monkeypatch.setattr(provision_app, "create_service_app", boom)
+    out = tmp_path / "key.pem"
+    with pytest.raises(RuntimeError):
+        _run(monkeypatch, "--key-out", str(out))
+    assert not out.exists()
+
+
 def test_update_config_writes_to_live_tail_config(monkeypatch, tmp_path):
     path = tmp_path / "orgs.yaml"
     path.write_text("envs:\n  one:\n    url: https://okta.example.test\n")

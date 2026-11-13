@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
 import os
@@ -161,9 +162,16 @@ def stash_pem_to_keychain(env: str, pem: str) -> str:
     return var
 
 
-def write_key_file(env: str, pem: str, path: str) -> str:
-    """Write the PEM to a new file readable only by its owner; never overwrite."""
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+def create_key_file(path: str) -> int:
+    """Create the key file (new, owner-only) before Okta is touched; exit if impossible."""
+    try:
+        return os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except OSError as exc:
+        sys.exit(f"Cannot create {path}: {exc.strerror}. Nothing was changed in Okta.")
+
+
+def write_key_file(env: str, pem: str, fd: int, path: str) -> str:
+    """Write the PEM to the already-created key file."""
     with os.fdopen(fd, "w") as f:
         f.write(pem)
     var = f"OKTA_LIVE_TAIL_{env.upper()}_PRIVATE_KEY"
@@ -222,13 +230,26 @@ def main() -> None:
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
 
+    key_fd = None
     if not args.dry_run:
         if args.key_out:
-            if os.path.exists(args.key_out):
-                sys.exit(f"{args.key_out} already exists; nothing was changed in Okta.")
+            key_fd = create_key_file(args.key_out)
         else:
             require_usable_keyring()
 
+    try:
+        _provision(args, key_fd)
+    except BaseException:
+        if key_fd is not None:
+            with contextlib.suppress(OSError):  # fd already closed once the key was written
+                os.close(key_fd)
+            # An empty file means no key was ever written: remove our placeholder.
+            if os.path.getsize(args.key_out) == 0:
+                os.unlink(args.key_out)
+        raise
+
+
+def _provision(args, key_fd) -> None:
     sess, base = _admin_sess(args.env)
     log.info("env=%s base=%s app_name=%s scopes=%s", args.env, base, args.app_name, args.scopes)
 
@@ -253,7 +274,7 @@ def main() -> None:
     grant_scopes(sess, base, app["id"], args.scopes)
     client_id = app.get("credentials", {}).get("oauthClient", {}).get("client_id") or app["id"]
     if args.key_out:
-        var = write_key_file(args.env, pem, args.key_out)
+        var = write_key_file(args.env, pem, key_fd, args.key_out)
     else:
         var = stash_pem_to_keychain(args.env, pem)
     pem = None
